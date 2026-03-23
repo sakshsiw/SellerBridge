@@ -169,11 +169,6 @@ app.get('/tools', async (req, res) => {
 
 /**
  * Execute SP-API call
- * POST /api/execute
- * Body: {
- *   endpoint: "getOrders",
- *   parameters: { ... }
- * }
  */
 app.post('/api/execute', async (req, res) => {
     try {
@@ -211,13 +206,6 @@ app.post('/api/execute', async (req, res) => {
 
 /**
  * Explore API catalog
- * POST /api/explore
- * Body: {
- *   endpoint?: "getOrders",
- *   category?: "orders",
- *   listCategories?: true,
- *   listEndpoints?: true
- * }
  */
 app.post('/api/explore', async (req, res) => {
     try {
@@ -249,14 +237,6 @@ app.post('/api/explore', async (req, res) => {
 
 /**
  * Execute external API call
- * POST /api/external
- * Body: {
- *   url: "https://api.example.com/data",
- *   method: "GET",
- *   headers: {},
- *   queryParams: {},
- *   body: ""
- * }
  */
 app.post('/api/external', async (req, res) => {
     try {
@@ -295,11 +275,6 @@ app.post('/api/external', async (req, res) => {
 
 /**
  * Generic MCP tool call endpoint
- * POST /mcp/call
- * Body: {
- *   tool: "execute-sp-api",
- *   arguments: { ... }
- * }
  */
 app.post('/mcp/call', async (req, res) => {
     try {
@@ -325,6 +300,101 @@ app.post('/mcp/call', async (req, res) => {
         res.status(500).json({
             success: false,
             error: error.message
+        });
+    }
+});
+
+// ============================================================================
+// SSE MCP ENDPOINT FOR CLAUDE INTEGRATION
+// ============================================================================
+
+/**
+ * SSE endpoint - Claude connects here to discover and use tools
+ */
+app.get('/mcp', async (req, res) => {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.flushHeaders();
+
+    // Send endpoint info
+    const sessionId = Date.now();
+    res.write(`data: ${JSON.stringify({ type: 'endpoint', url: '/mcp', sessionId })}\n\n`);
+
+    // Keep alive ping every 30 seconds
+    const keepAlive = setInterval(() => {
+        res.write(': ping\n\n');
+    }, 30000);
+
+    req.on('close', () => {
+        clearInterval(keepAlive);
+    });
+});
+
+/**
+ * MCP POST endpoint - Claude sends tool calls here
+ */
+app.post('/mcp', async (req, res) => {
+    try {
+        const { jsonrpc, id, method, params } = req.body;
+
+        console.log(`MCP Request: ${method}`, JSON.stringify(params || {}));
+
+        // Handle initialize
+        if (method === 'initialize') {
+            return res.json({
+                jsonrpc: '2.0',
+                id,
+                result: {
+                    protocolVersion: '2024-11-05',
+                    capabilities: { tools: {} },
+                    serverInfo: {
+                        name: 'sellerbridge-mcp',
+                        version: '1.0.0'
+                    }
+                }
+            });
+        }
+
+        // Handle tools/list
+        if (method === 'tools/list') {
+            const result = await sendMCPRequest('tools/list');
+            return res.json({
+                jsonrpc: '2.0',
+                id,
+                result
+            });
+        }
+
+        // Handle tools/call
+        if (method === 'tools/call') {
+            const result = await sendMCPRequest('tools/call', params);
+            return res.json({
+                jsonrpc: '2.0',
+                id,
+                result
+            });
+        }
+
+        // Handle notifications (no response needed)
+        if (method && method.startsWith('notifications/')) {
+            return res.json({ jsonrpc: '2.0', id, result: {} });
+        }
+
+        // Unknown method
+        res.status(400).json({
+            jsonrpc: '2.0',
+            id,
+            error: { code: -32601, message: `Method not found: ${method}` }
+        });
+
+    } catch (error) {
+        console.error('MCP endpoint error:', error);
+        res.status(500).json({
+            jsonrpc: '2.0',
+            id: req.body?.id,
+            error: { code: -32603, message: error.message }
         });
     }
 });
@@ -385,5 +455,7 @@ app.listen(PORT, () => {
     console.log(`  POST /api/execute     - Execute SP-API call`);
     console.log(`  POST /api/explore     - Explore API catalog`);
     console.log(`  POST /api/external    - Execute external API call`);
-    console.log(`  POST /mcp/call        - Generic MCP tool call\n`);
+    console.log(`  POST /mcp/call        - Generic MCP tool call`);
+    console.log(`  GET  /mcp             - SSE MCP endpoint (Claude)`);
+    console.log(`  POST /mcp             - MCP tool calls (Claude)\n`);
 });
