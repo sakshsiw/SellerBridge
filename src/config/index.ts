@@ -8,6 +8,6 @@ export interface AppConfig {
 export const config: AppConfig = {
   debug: process.env.NODE_ENV !== 'production',
   logLevel: (process.env.LOG_LEVEL || 'info') as AppConfig['logLevel'],
-  catalogPath: process.env.CATALOG_PATH || './swagger',
+  catalogPath: process.env.CATALOG_PATH || './models',
   maxTokens: parseInt(process.env.MAX_RESPONSE_TOKENS || '25000', 10)
 };

@@ -33,7 +33,9 @@ export class CatalogLoader {
     
     try {
       // Step 1: Load Swagger files
-      const catalogPath = path.resolve(process.cwd(), config.catalogPath);
+      const catalogPath = config.catalogPath.startsWith('/') 
+  ? config.catalogPath 
+  : path.resolve(process.cwd(), config.catalogPath);
       logger.info(`Loading Swagger files from: ${catalogPath}`);
       const swaggerMap = await this.swaggerLoader.loadSwaggerFiles(catalogPath);
       
